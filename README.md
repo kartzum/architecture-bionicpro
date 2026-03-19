@@ -69,3 +69,6 @@ prothetic3	prothetic3	prothetic3@example.com	Prothetic	Three	bp_v3	2026-03-15 13
 prothetic3	prothetic3	prothetic3@example.com	Prothetic	Three	bp_v3	2026-03-15 13:34:33_1	usage_hours	7.1	2026-03-15 13:34:33
 ```
 
+## Ресурсы
+
+[README.md](docs/README.md)

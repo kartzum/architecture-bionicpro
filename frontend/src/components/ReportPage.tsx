@@ -7,28 +7,55 @@ const ReportPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const downloadReport = async () => {
-    if (!keycloak?.token) {
-      setError('Not authenticated');
-      return;
+  if (!keycloak?.token) {
+    setError('Not authenticated');
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError(null);
+
+    const response = await fetch(`${process.env.REACT_APP_API_URL}/reports`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${keycloak.token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`);
     }
 
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/reports`, {
-        headers: {
-          'Authorization': `Bearer ${keycloak.token}`
-        }
-      });
-
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
+    const disposition = response.headers.get('content-disposition');
+    let fileName = 'report.csv';
+    if (disposition && disposition.includes('filename=')) {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches?.[1]) {
+        fileName = matches[1].replace(/['"]/g, '');
+      }
     }
-  };
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    setLoading(false);
+  } catch (err) {
+    console.error('Error:', err);
+    setError(err instanceof Error ? err.message : 'Error');
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (!initialized) {
     return <div>Loading...</div>;
@@ -51,7 +78,7 @@ const ReportPage: React.FC = () => {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
       <div className="p-8 bg-white rounded-lg shadow-md">
         <h1 className="text-2xl font-bold mb-6">Usage Reports</h1>
-        
+
         <button
           onClick={downloadReport}
           disabled={loading}

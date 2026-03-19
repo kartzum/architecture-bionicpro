@@ -1,15 +1,112 @@
-import os
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.responses import Response, JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.logger import logger
+from jose import jwt, JWTError
 import csv
-from fastapi import FastAPI, Depends
-import uvicorn
+import io
+import os
+import httpx
+from typing import Dict, Any
+import logging
 
-app = FastAPI()
+app = FastAPI(title="Reports Backend", version="0.0.1")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["Content-Disposition"],
+    max_age=3600,
+)
+
+security = HTTPBearer()
+
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080")
+REALM = os.getenv("KEYCLOAK_REALM", "reports-realm")
+
+JWKS_URL = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/certs"
+
+jwks_cache: Dict[str, Any] = {}
+
+
+async def get_jwks():
+    logger.info(f"get_jwks. url={JWKS_URL}")
+    global jwks_cache
+    if not jwks_cache:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(JWKS_URL)
+            resp.raise_for_status()
+            jwks_cache = resp.json()
+    return jwks_cache
+
+
+async def get_public_key(kid: str):
+    jwks = await get_jwks()
+    for key in jwks.get("keys", []):
+        if key["kid"] == kid:
+            return key
+    raise HTTPException(status_code=401, detail="Public key not found")
+
+
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    headers = jwt.get_unverified_header(token)
+    kid = headers.get("kid")
+    if not kid:
+        raise HTTPException(status_code=401, detail="Invalid token header")
+
+    public_key = await get_public_key(kid)
+
+    try:
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            audience="reports-frontend",
+            options={"verify_exp": True, "verify_aud": True}
+        )
+        return payload
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+
+@app.get("/reports")
+async def get_reports(user: dict = Depends(verify_token)):
+    logger.info(f"get_reports. starting")
+
+    user_name = user["preferred_username"]
+
+    logger.info(f"get_reports. user_name={user_name}")
+
+    data = [
+        [1, 2, 3],
+        [4, 5, 6],
+        [0, 0, 0]
+    ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerows(data)
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=reports.csv",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
+    )
 
 @app.get("/health")
 async def health_check():
     return {"status": "OK"}
-
 
 def main():
     import uvicorn
