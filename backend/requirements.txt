@@ -1,0 +1,8 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+clickhouse-connect==0.7.19
+pyjwt==2.10.1
+cryptography
+python-jose
+httpx
+
