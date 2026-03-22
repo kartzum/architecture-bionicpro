@@ -10,6 +10,7 @@ import os
 import httpx
 from typing import Dict, Any
 import logging
+import clickhouse_connect
 
 app = FastAPI(title="Reports Backend", version="0.0.1")
 
@@ -77,6 +78,32 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
+def ch_create_client():
+    clickhouse_host = os.getenv("CH_HOST", "clickhouse")
+    clickhouse_username = os.getenv("CH_USERNAME", "admin")
+    clickhouse_password = os.getenv("CH_PASSWORD", "admin")
+    return clickhouse_connect.get_client(
+        host=clickhouse_host,
+        username=clickhouse_username,
+        password=clickhouse_password
+    )
+
+
+def ch_execute_query(client, query, parameters):
+    return client.query(query, parameters=parameters)
+
+def ch_execute_report_data(user_name):
+    client = ch_create_client()
+    parameters = {'user_name': user_name}
+    query = "SELECT username, thing_id, thing_param_name, thing_value, processed_at FROM reports_mart WHERE username={user_name:String} ORDER BY processed_at DESC LIMIT 10"
+    r = ch_execute_query(client, query, parameters)
+    data = []
+    for row in r.result_set:
+        i = [row[0], row[1], row[2], row[3], row[4]]
+        data.append(i)
+    return data
+
+
 @app.get("/reports")
 async def get_reports(user: dict = Depends(verify_token)):
     logger.info(f"get_reports. starting")
@@ -85,11 +112,7 @@ async def get_reports(user: dict = Depends(verify_token)):
 
     logger.info(f"get_reports. user_name={user_name}")
 
-    data = [
-        [1, 2, 3],
-        [4, 5, 6],
-        [0, 0, 0]
-    ]
+    data = ch_execute_report_data(user_name)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -104,9 +127,11 @@ async def get_reports(user: dict = Depends(verify_token)):
         }
     )
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "OK"}
+
 
 def main():
     import uvicorn

@@ -19,10 +19,13 @@ default_args = {
 }
 
 def ch_create_client():
+    clickhouse_host = os.getenv("CH_HOST", "clickhouse")
+    clickhouse_username = os.getenv("CH_USERNAME", "admin")
+    clickhouse_password = os.getenv("CH_PASSWORD", "admin")
     return clickhouse_connect.get_client(
-        host='clickhouse',
-        username='admin',
-        password='admin'
+        host=clickhouse_host,
+        username=clickhouse_username,
+        password=clickhouse_password
     )
 
 def ch_execute_command(query):
