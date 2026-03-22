@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   keycloak_db:
@@ -11,6 +10,7 @@ services:
       - ./postgres-keycloak-data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
     environment:
@@ -29,6 +29,28 @@ services:
       - "8080:8080"
     depends_on:
       - keycloak_db
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    volumes:
+      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8123/ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+
   frontend:
     build:
       context: ./frontend
@@ -40,3 +62,26 @@ services:
       REACT_APP_KEYCLOAK_URL: http://localhost:8080
       REACT_APP_KEYCLOAK_REALM: reports-realm
       REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
+
+  airflow-standalone:
+    container_name: airflow-standalone
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow/dags:/home/airflow/airflow/dags
+      - ./airflow/standalone_entrypoint.sh:/opt/airflow/standalone_entrypoint.sh
+    ports:
+      - "8081:8080"
+    entrypoint: [ "/bin/bash" ]
+    command: [ "/opt/airflow/standalone_entrypoint.sh" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8080/ || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+
